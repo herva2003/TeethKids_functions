@@ -1,50 +1,40 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 
-// inicializando o firebase admin
-const firebase = admin.initializeApp();
+admin.initializeApp();
 
-type CustomResponse = {
-  status: string | unknown,
-  message: string | unknown,
-  payload: unknown,
-}
-
-export const sendFcmMessage = functions
+export const sendEmergencyNotification = functions
   .region("southamerica-east1")
-  .runWith({enforceAppCheck: false})
-  .https
-  .onCall(async (data, context) => {
-    const cResponse: CustomResponse = {
-      status: "ERROR",
-      message: "Dados não fornecidos ou incompletos",
-      payload: undefined,
+  .firestore.document("emergencias/{docId}")
+  .onCreate(async (snapshot) => {
+    const usersSnapshot = await admin.firestore()
+      .collection("users").where("status", "==", "ONLINE").get();
+
+    const fcmTokens = usersSnapshot.docs.map((doc) => doc.data().fcmToken);
+
+    const payload: admin.messaging.MessagingPayload = {
+      notification: {
+        title: "Nova emergência!",
+        body: ".....",
+      },
+      data: {
+        id: snapshot.id,
+        name: snapshot.get("clientName"),
+        phone: snapshot.get("clientPhone"),
+      },
     };
-    // enviar uma mensagem para o token que veio.
-    if (data.fcmToken != undefined && data.textContent != undefined) {
-      try {
-        const message = {
-          data: {
-            text: data.textContent,
-          },
-          token: data.fcmToken,
-        };
-        const messageId = await firebase.messaging().send(message);
-        cResponse.status = "SUCCESS";
-        cResponse.message = "Mensagem enviada";
-        cResponse.payload = JSON.stringify({messageId: messageId});
-      } catch (e) {
-        let exMessage;
-        if (e instanceof Error) {
-          exMessage = e.message;
-        }
-        functions.logger.error("Erro ao enviar mensagem");
-        functions.logger.error("Exception: ", exMessage);
-        cResponse.status = "ERROR";
-        cResponse.message = "Erro ao enviar mensagem - Verificar Logs";
-        cResponse.payload = null;
-      }
-    }
-    return JSON.stringify(cResponse);
+
+    const message: admin.messaging.MulticastMessage = {
+      notification: payload.notification,
+      data: payload.data,
+      tokens: [],
+    };
+
+    message.tokens = fcmTokens;
+
+    const response = await admin.messaging().sendMulticast(message);
+
+    console.log(`${response} ${message.tokens}
+     notifications sent successfully`);
   });
 
