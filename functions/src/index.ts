@@ -37,4 +37,3 @@ export const sendEmergencyNotification = functions
     console.log(`${response} ${message.tokens}
      notifications sent successfully`);
   });
-
